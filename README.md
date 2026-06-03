@@ -4,7 +4,21 @@
 
 ## 界面预览
 
-![基金组合回测工具界面预览](docs/screenshot.png)
+### 艾泽拉斯 / 暴雪风格
+
+![艾泽拉斯主题界面预览](docs/screenshot-azeroth.jpg)
+
+### 投研主题
+
+![投研主题界面预览](docs/screenshot-research.jpg)
+
+### 网易云主题
+
+![网易云主题界面预览](docs/screenshot-netease.jpg)
+
+### Mac 主题
+
+![Mac 主题界面预览](docs/screenshot-mac.jpg)
 
 ## 功能特性
 
@@ -81,12 +95,15 @@ npm run check
 ```text
 .
 ├── server/
-│   └── index.mjs        # 本地 Express 服务和基金数据代理
+│   └── index.mjs                 # 本地 Express 服务和基金数据代理
 ├── src/
-│   ├── main.tsx         # 前端界面、回测计算和图表
-│   └── styles.css       # 页面布局和主题样式
+│   ├── main.tsx                  # 前端界面、回测计算和图表
+│   └── styles.css                # 页面布局和主题样式
 ├── docs/
-│   └── screenshot.png   # README 界面截图
+│   ├── screenshot-azeroth.jpg    # 艾泽拉斯主题截图
+│   ├── screenshot-research.jpg   # 投研主题截图
+│   ├── screenshot-netease.jpg    # 网易云主题截图
+│   └── screenshot-mac.jpg        # Mac 主题截图
 ├── index.html
 ├── package.json
 ├── tsconfig.json
