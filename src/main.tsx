@@ -350,36 +350,36 @@ function ChartAnnualOverlay({
   const yForReturn = (value: number) => 100 - ((value - yMin) / (yMax - yMin)) * 100;
 
   return (
-    <svg className="chart-annotation-layer" aria-hidden="true">
-      {annualMarkers.map((marker) => {
-        const x = xForIndex(marker.boundaryIndex);
-        return (
-          <line
-            key={`line-${marker.boundaryDate}`}
-            className="annual-year-line"
-            x1={`${x}%`}
-            x2={`${x}%`}
-            y1="0"
-            y2="100%"
-          />
-        );
-      })}
+    <div className="chart-annotation-layer" aria-hidden="true">
+      <svg className="annual-line-layer">
+        {annualMarkers.map((marker) => {
+          const x = xForIndex(marker.boundaryIndex);
+          return (
+            <line
+              key={`line-${marker.boundaryDate}`}
+              className="annual-year-line"
+              x1={`${x}%`}
+              x2={`${x}%`}
+              y1="0"
+              y2="100%"
+            />
+          );
+        })}
+      </svg>
       {annualMarkers.map((marker) => {
         const x = xForIndex(marker.labelIndex);
-        const y = Math.max(6, Math.min(94, yForReturn(marker.labelReturnPct) - 5));
+        const y = Math.max(8, Math.min(88, yForReturn(marker.labelReturnPct) - 4));
         return (
-          <text
+          <span
             key={`label-${marker.labelDate}-${marker.label}`}
             className="annual-return-label"
-            x={`${x}%`}
-            y={`${y}%`}
-            textAnchor="middle"
+            style={{ left: `${x}%`, top: `${y}%` }}
           >
             {marker.label}
-          </text>
+          </span>
         );
       })}
-    </svg>
+    </div>
   );
 }
 
