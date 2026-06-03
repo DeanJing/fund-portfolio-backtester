@@ -30,6 +30,13 @@ type Holding = {
   weight: string;
 };
 
+type SavedPortfolio = {
+  id: string;
+  name: string;
+  holdings: Holding[];
+  updatedAt: string;
+};
+
 type FundState = {
   status: "idle" | "loading" | "success" | "error";
   data?: FundData;
@@ -55,8 +62,11 @@ type AnnualMarker = {
 };
 
 const STORAGE_KEY = "fund-portfolio-backtester:holdings";
+const PORTFOLIOS_KEY = "fund-portfolio-backtester:portfolios";
+const ACTIVE_PORTFOLIO_KEY = "fund-portfolio-backtester:active-portfolio";
 const SIDEBAR_WIDTH_KEY = "fund-portfolio-backtester:sidebar-width";
 const THEME_KEY = "fund-portfolio-backtester:theme";
+const MAX_PORTFOLIOS = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 680;
@@ -98,6 +108,54 @@ function loadSavedHoldings(): Holding[] {
     }));
   } catch {
     return DEFAULT_HOLDINGS;
+  }
+}
+
+function normalizeHoldings(holdings: Holding[]) {
+  return holdings.map((holding) => ({
+    id: holding.id || crypto.randomUUID(),
+    code: holding.code || "",
+    weight: holding.weight || ""
+  }));
+}
+
+function createPortfolio(name: string, holdings: Holding[]): SavedPortfolio {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    holdings: normalizeHoldings(holdings),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function loadSavedPortfolios() {
+  try {
+    const raw = localStorage.getItem(PORTFOLIOS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SavedPortfolio[];
+      const portfolios = Array.isArray(parsed)
+        ? parsed
+            .filter((portfolio) => portfolio && Array.isArray(portfolio.holdings))
+            .slice(0, MAX_PORTFOLIOS)
+            .map((portfolio) => ({
+              id: portfolio.id || crypto.randomUUID(),
+              name: portfolio.name || "未命名组合",
+              holdings: normalizeHoldings(portfolio.holdings),
+              updatedAt: portfolio.updatedAt || new Date().toISOString()
+            }))
+        : [];
+      if (portfolios.length > 0) {
+        const activeId = localStorage.getItem(ACTIVE_PORTFOLIO_KEY);
+        const activePortfolio = portfolios.find((portfolio) => portfolio.id === activeId) ?? portfolios[0];
+        return { portfolios, activePortfolio };
+      }
+    }
+
+    const migrated = createPortfolio("默认组合", loadSavedHoldings());
+    return { portfolios: [migrated], activePortfolio: migrated };
+  } catch {
+    const fallback = createPortfolio("默认组合", DEFAULT_HOLDINGS);
+    return { portfolios: [fallback], activePortfolio: fallback };
   }
 }
 
@@ -384,7 +442,19 @@ function ChartAnnualOverlay({
 }
 
 function App() {
-  const [holdings, setHoldings] = useState<Holding[]>(loadSavedHoldings);
+  const initialPortfolioState = useMemo(loadSavedPortfolios, []);
+  const [portfolios, setPortfolios] = useState<SavedPortfolio[]>(
+    initialPortfolioState.portfolios
+  );
+  const [activePortfolioId, setActivePortfolioId] = useState(
+    initialPortfolioState.activePortfolio.id
+  );
+  const [holdings, setHoldings] = useState<Holding[]>(
+    initialPortfolioState.activePortfolio.holdings
+  );
+  const [portfolioName, setPortfolioName] = useState(
+    initialPortfolioState.activePortfolio.name
+  );
   const [range, setRange] = useState<RangeKey>("all");
   const [fundStates, setFundStates] = useState<Record<string, FundState>>({});
   const [sidebarWidth, setSidebarWidth] = useState(loadSavedSidebarWidth);
@@ -394,6 +464,14 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(holdings));
   }, [holdings]);
+
+  useEffect(() => {
+    localStorage.setItem(PORTFOLIOS_KEY, JSON.stringify(portfolios));
+  }, [portfolios]);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_PORTFOLIO_KEY, activePortfolioId);
+  }, [activePortfolioId]);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -520,18 +598,89 @@ function App() {
     })
   ].filter(Boolean);
 
-  function updateHolding(id: string, patch: Partial<Holding>) {
-    setHoldings((current) =>
-      current.map((holding) => (holding.id === id ? { ...holding, ...patch } : holding))
+  function syncActivePortfolio(nextHoldings: Holding[], nextName = portfolioName) {
+    setPortfolios((current) =>
+      current.map((portfolio) =>
+        portfolio.id === activePortfolioId
+          ? {
+              ...portfolio,
+              name: nextName.trim() || portfolio.name,
+              holdings: normalizeHoldings(nextHoldings),
+              updatedAt: new Date().toISOString()
+            }
+          : portfolio
+      )
     );
   }
 
+  function updateHolding(id: string, patch: Partial<Holding>) {
+    setHoldings((current) => {
+      const next = current.map((holding) =>
+        holding.id === id ? { ...holding, ...patch } : holding
+      );
+      syncActivePortfolio(next);
+      return next;
+    });
+  }
+
   function addHolding() {
-    setHoldings((current) => [...current, { id: crypto.randomUUID(), code: "", weight: "" }]);
+    setHoldings((current) => {
+      const next = [...current, { id: crypto.randomUUID(), code: "", weight: "" }];
+      syncActivePortfolio(next);
+      return next;
+    });
   }
 
   function removeHolding(id: string) {
-    setHoldings((current) => current.filter((holding) => holding.id !== id));
+    setHoldings((current) => {
+      const next = current.filter((holding) => holding.id !== id);
+      syncActivePortfolio(next);
+      return next;
+    });
+  }
+
+  function selectPortfolio(id: string) {
+    const portfolio = portfolios.find((item) => item.id === id);
+    if (!portfolio) {
+      return;
+    }
+    setActivePortfolioId(portfolio.id);
+    setHoldings(normalizeHoldings(portfolio.holdings));
+    setPortfolioName(portfolio.name);
+  }
+
+  function savePortfolioName() {
+    const nextName = portfolioName.trim() || "未命名组合";
+    setPortfolioName(nextName);
+    syncActivePortfolio(holdings, nextName);
+  }
+
+  function createNewPortfolioFromCurrent() {
+    if (portfolios.length >= MAX_PORTFOLIOS) {
+      return;
+    }
+
+    const nextPortfolio = createPortfolio(
+      `组合 ${portfolios.length + 1}`,
+      holdings.map((holding) => ({ ...holding, id: crypto.randomUUID() }))
+    );
+    setPortfolios((current) => [...current, nextPortfolio]);
+    setActivePortfolioId(nextPortfolio.id);
+    setHoldings(nextPortfolio.holdings);
+    setPortfolioName(nextPortfolio.name);
+  }
+
+  function deleteActivePortfolio() {
+    if (portfolios.length <= 1) {
+      return;
+    }
+
+    const remaining = portfolios.filter((portfolio) => portfolio.id !== activePortfolioId);
+    const nextActive = remaining[0];
+    setPortfolios(remaining);
+    setActivePortfolioId(nextActive.id);
+    setHoldings(normalizeHoldings(nextActive.holdings));
+    setPortfolioName(nextActive.name);
   }
 
   function startResizing(event: React.PointerEvent<HTMLButtonElement>) {
@@ -576,6 +725,56 @@ function App() {
           <p className="eyebrow">本地回测工具</p>
           <h1>基金组合收益曲线</h1>
           <p>录入基金代码和权重，按复权净值回测组合涨跌。</p>
+        </div>
+
+        <div className="portfolio-manager">
+          <label className="portfolio-select">
+            <span>当前组合</span>
+            <select value={activePortfolioId} onChange={(event) => selectPortfolio(event.target.value)}>
+              {portfolios.map((portfolio) => (
+                <option key={portfolio.id} value={portfolio.id}>
+                  {portfolio.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="portfolio-name-row">
+            <input
+              aria-label="组合名称"
+              value={portfolioName}
+              onBlur={savePortfolioName}
+              onChange={(event) => setPortfolioName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  savePortfolioName();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            <button type="button" onClick={savePortfolioName}>
+              重命名
+            </button>
+          </div>
+          <div className="portfolio-actions">
+            <button
+              type="button"
+              onClick={createNewPortfolioFromCurrent}
+              disabled={portfolios.length >= MAX_PORTFOLIOS}
+            >
+              保存为新组合
+            </button>
+            <button
+              type="button"
+              className="danger-action"
+              onClick={deleteActivePortfolio}
+              disabled={portfolios.length <= 1}
+            >
+              删除组合
+            </button>
+          </div>
+          <p className="portfolio-count">
+            已保存 {portfolios.length}/{MAX_PORTFOLIOS} 个组合
+          </p>
         </div>
 
         <div className="holdings">
